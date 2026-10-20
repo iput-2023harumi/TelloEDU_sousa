@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import queue
 import sys
 import threading
 import time
@@ -53,7 +54,10 @@ class VideoWorker(QThread):
         drone = None
         camera = None
         streaming = False
+        reset_connection_before_next_start = False
+        stage = "initialization"
         try:
+            stage = "connecting to drone"
             if self.local_ip:
                 robomaster.config.LOCAL_IP_STR = self.local_ip
 
@@ -65,8 +69,20 @@ class VideoWorker(QThread):
 
             while not self._shutdown.is_set():
                 if self._start_stream.is_set() and not streaming:
+                    if reset_connection_before_next_start:
+                        stage = "reconnecting after video stop"
+                        self.status_changed.emit("Reconnecting...")
+                        drone.close()
+                        drone = robot.Drone()
+                        drone.initialize()
+                        camera = drone.camera
+                        reset_connection_before_next_start = False
+
+                    stage = "starting video stream"
                     self.status_changed.emit("Starting video...")
-                    camera.start_video_stream(display=False)
+                    stream_started = camera.start_video_stream(display=False)
+                    if not stream_started:
+                        raise RuntimeError("camera.start_video_stream() returned False")
                     streaming = True
                     self._start_stream.clear()
                     self.status_changed.emit("Video streaming")
@@ -74,11 +90,24 @@ class VideoWorker(QThread):
                 if self._stop_stream.is_set() and streaming:
                     camera.stop_video_stream()
                     streaming = False
+                    reset_connection_before_next_start = True
                     self._stop_stream.clear()
                     self.status_changed.emit("Connected")
 
                 if streaming:
-                    frame = camera.read_cv2_image()
+                    stage = "waiting for video frame"
+                    try:
+                        frame = camera.read_cv2_image(timeout=3, strategy="newest")
+                    except queue.Empty as exc:
+                        liveview = getattr(camera, "_liveview", None)
+                        stream_conn = getattr(liveview, "_video_stream_conn", None)
+                        packet_count = getattr(stream_conn, "_recv_count", "unknown")
+                        decoded_count = getattr(liveview, "_video_frame_count", "unknown")
+                        raise TimeoutError(
+                            "No frame in 3 seconds; "
+                            f"UDP packets received={packet_count}, "
+                            f"decoded frames={decoded_count}"
+                        ) from exc
                     if frame is None:
                         time.sleep(0.01)
                         continue
@@ -94,7 +123,7 @@ class VideoWorker(QThread):
                 else:
                     self._shutdown.wait(0.05)
         except Exception as exc:
-            self.status_changed.emit(f"Error: {exc}")
+            self.status_changed.emit(f"Error during {stage}: {type(exc).__name__}: {exc}")
         finally:
             if camera is not None and streaming:
                 try:
