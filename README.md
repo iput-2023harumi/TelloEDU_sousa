@@ -115,6 +115,32 @@ python .\src\tello_video_preview.py
 
 画面の **Connect** を押して接続し、**Start video** で映像を開始します。停止するときは **Stop video** を押します。この画面には飛行操作はありません。
 
+## DualSenseによる手動操作
+
+DualSenseをUSBでPCに接続し、Tello EDUのWi-Fiへ接続してから実行します。初回は入力軸とボタン番号を確認します。この確認モードはドローンに接続しません。
+
+```powershell
+python .\src\tello_controller.py --input-check
+```
+
+入力表示で左スティックとL2/R2の軸番号、Cross/Circle/L1のボタン番号を確認します。既定値は左スティック軸 `0/1`、L2/R2軸 `4/5`、Cross/Circle/L1ボタン `0/1/4` です。実機の表示が異なる場合は `--left-x-axis`、`--left-y-axis`、`--l2-axis`、`--r2-axis`、`--takeoff-button`、`--land-button`、`--deadman-button` で指定します。トリガーが休止時に `0` を表示する場合は `--trigger-rest 0` を指定します。
+
+入力を確認したら、周囲の安全を確認して手動操作を開始します。
+
+```powershell
+python .\src\tello_controller.py --confirm-flight
+```
+
+PCのTello Wi-Fiアダプターが複数ある場合や接続に失敗する場合は、アダプターのIPアドレスを指定します。たとえば `192.168.10.2` の場合は次のように起動します。
+
+```powershell
+python .\src\tello_controller.py --local-ip 192.168.10.2 --confirm-flight
+```
+
+Crossで離陸、Circleで着陸します。飛行中にL1を押している間だけ左スティックとL2/R2の操作を有効にし、L1を離すとホバリング指令を送ります。左スティックは前後左右、L2は下降、R2は上昇です。初期のRC上限は30/100で、`--max-rc` で10から50の範囲に設定できます。旋回は無効です。入力確認・初回飛行では低い上限から始めてください。
+
+ゲームパッドの切断や制御中のエラーを検出すると、プログラムは着陸を試みます。Wi-Fiが切断された場合は着陸指令が届かないため、機体を目視し、必要に応じて手動で対応してください。
+
 接続に失敗する場合は、PCのTello Wi-FiアダプターのIPアドレスを指定します。
 
 ```powershell
